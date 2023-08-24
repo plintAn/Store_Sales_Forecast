@@ -489,11 +489,117 @@ OutPut
 휴일(이벤트)와 평일 판매수의 비교 분석 결과 휴일(이벤트)가 약 11% 높은 판매수를 보이고 있습니다.
 
 
-### 2.5.2
+### 2.8 데이터 병합 및 정렬
+
+1.df_sales & df_oil 결합
+
+```python
+# '날짜'를 기준으로 df_sales와 df_oil을 병합 (left join)
+merged_df = df_sales.merge(df_oil[['날짜', '유가']], on='날짜', how='left')
+
+# 병합 결과를 df_sales에 반영
+df_sales_oil = merged_df
+```
+결합 후 결측값을 다음날 유가로 대체.
+```python
+# 결측값 다음값으로 변경
+df_sales_oil['유가'] = df_sales_oil['유가'].fillna(method='bfill')
+df_sales_oil
+```
+
+2.1.df_sales_oil & df_holidays_events 결합
+
+```python
+df_sales_oil_holidays = df_sales_oil.merge(df_holidays_events[['날짜', '변경']], on='날짜', how='left')
+df_sales_oil_holidays
+```
+
+### 'df_sales_oil_holidays' 의 '변경' 열의 값이 Nan값이면 'O', Nan값이 아니면 'X'로 저장하는 코드
+
+```python
+import numpy as np
+
+df_sales_oil_holidays['변경'] = np.where(df_sales_oil_holidays['변경'].isnull(), 'O', 'X')
+df_sales_oil_holidays
+```
+
+결합 후 보니 중복값이 생겨서 중복값 제거
+
+```python
+df_sales_oil_holidays = df_sales_oil_holidays.drop_duplicates(subset='날짜', keep='first')
+df_sales_oil_holidays
+```
+
+타임스탬프 추가
+
+```python
+df_sales_oil_holidays['타임스탬프'] = (df_sales_oil_holidays['날짜'] - pd.Timestamp("1970-01-01")) // pd.Timedelta('1s')
+df_sales_oil_holidays
+```
+
+최종 데이터 
+OutPut
+
+```python
+날짜	판매수	유가	변경	타임스탬프
+0	2013-01-01	2511.618999	93.14	X	1356998400
+1	2013-01-02	496092.417944	93.14	O	1357084800
+2	2013-01-03	361461.231124	92.97	O	1357171200
+3	2013-01-04	354459.677093	93.12	O	1357257600
+4	2013-01-05	477350.121229	93.20	X	1357344000
+...	...	...	...	...	...
+1683	2017-08-11	826373.722022	48.81	X	1502409600
+1684	2017-08-12	792630.535079	47.59	O	1502496000
+1685	2017-08-13	865639.677471	47.59	O	1502582400
+1686	2017-08-14	760922.406081	47.59	O	1502668800
+1687	2017-08-15	762661.935939	47.57	X	1502755200
+1688 rows × 5 columns
+```
 
 
-### 2.2.1 시계열 시각화 기본 분석
+### 2.8 스케일링
 
+모델링의 성능을 높이기 위해 표준화(0,1)를 진행하였습니다.
+
+변수는 다음 결과를 참고했습니다.
+
+* '이벤트' 열이 '0'인 날짜의 판매수가 '이벤트 1' 날짜보다 약 11.07% 차이납니다.
+* 판매수와 유가의 상관 계수: -0.71
+
+```python
+# '변경' 열을 이진수로 변환
+df_sales_oil_holidays['변경'] = df_sales_oil_holidays['변경'].map({'O': 1, 'X': 0})
+
+# '유가'와 '판매수' 특성 스케일링
+scaler_oil = StandardScaler()
+scaled_oil = scaler_oil.fit_transform(df_sales_oil_holidays[['유가']])
+
+scaler_sales = StandardScaler()
+scaled_sales = scaler_sales.fit_transform(df_sales_oil_holidays[['판매수']])
+
+# 스케일링된 결과를 새로운 데이터프레임에 저장
+df_sales_oil_holidays_scaled = df_sales_oil_holidays.copy()
+df_sales_oil_holidays_scaled['유가'] = scaled_oil
+df_sales_oil_holidays_scaled['판매수'] = scaled_sales
+
+print(df_sales_oil_holidays_scaled.head)
+```
+OutPut
+```python
+	날짜	판매수	유가	변경	타임스탬프
+0	2013-01-01	-2.683254	0.984187	0	1356998400
+1	2013-01-02	-0.592754	0.984187	1	1357084800
+2	2013-01-03	-1.162968	0.977572	1	1357171200
+3	2013-01-04	-1.192622	0.983409	1	1357257600
+4	2013-01-05	-0.672135	0.986521	0	1357344000
+...	...	...	...	...	...
+1683	2017-08-11	0.806111	-0.740639	0	1502409600
+1684	2017-08-12	0.663196	-0.788108	1	1502496000
+1685	2017-08-13	0.972417	-0.788108	1	1502582400
+1686	2017-08-14	0.528900	-0.788108	1	1502668800
+1687	2017-08-15	0.536268	-0.788886	0	1502755200
+1688 rows × 5 columns
+```
 
 </div>
 
@@ -501,7 +607,34 @@ OutPut
 
 # 3.데이터 모델링
 
+* LinearRegression은 단일 결정 함수로 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 포착하는 데 한계가 있지만, 이해하기 쉽고 구현하기 쉽다는 장점이 있다.
+* RandomForestRegressor는 여러 개의 결정 트리를 결합하여 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 잘 포착하여 높은 예측 성능을 보인다
+* DecisionTreeRegressor는 단일 결정 트리로 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 잘 포착할 수 있다.
+
+
 ```python
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+# 15일과 말일 변수 제거
+X = df_sales_oil_holidays_scaled[["변경", "유가"]]
+y = df_sales_oil_holidays_scaled["판매수"]
+
+# 학습 데이터와 테스트 데이터 분리
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+
+# 모델링
+models = [LinearRegression(), RandomForestRegressor(), DecisionTreeRegressor()]
+for model in models:
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    mse = mean_squared_error(y_test, predictions)
+    print(f"{model.__class__.__name__}: {mse}")
+
 
 ```
 
@@ -511,11 +644,29 @@ OutPut
 
 # 4.데이터 모델링 평가
 
+OutPut
+
+```python
+LinearRegression: 0.6824518988477972
+RandomForestRegressor: 0.8073812617986736
+DecisionTreeRegressor: 0.991017555995399
+```
+
+#### 세 가지 모델을 비교하여 가장 효과가 좋은 분석은 랜덤포레스트회귀
+
+MSE 값이 가장 낮기 떄문이다.
+
+랜덤포레스트회귀 모델은 여러 개의 결정 트리를 결합하여 예측을 수행한다. 데이터의 복잡한 패턴을 잘 포착하여 높은 예측 성능을 보인다.또한, 과적합의 위험을 줄이기 위해 앙상블 학습 기법을 사용한다.
+
+따라서, df_sales_oil_holidays_scaled 데이터를 기반으로 날짜별 판매수를 예측하는 데 가장 효과적인 분석은 랜덤포레스트회귀이다.
+
 </div>
 
 <div id="5">
 
-# 5.데이터 결과 예측
+# 5.데이터 결과 테스트 및 예측
+
+
 
 </div>
 

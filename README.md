@@ -407,42 +407,75 @@ OutPut
 import matplotlib.pyplot as plt
 
 # 15일과 말일 데이터만 선택
-filtered_sales = df_train[(df_train['날짜'].dt.day == 15) | (df_train['날짜'].dt.is_month_end)]
+filtered_df_sales_oil_merged = df_sales_oil_merged[(df_sales_oil_merged['날짜'].dt.day == 15) | (df_sales_oil_merged['날짜'].dt.is_month_end)]
+
+# 그 외의 날짜 데이터 선택
+other_df_sales_oil_merged = df_sales_oil_merged[~((df_sales_oil_merged['날짜'].dt.day == 15) | (df_sales_oil_merged['날짜'].dt.is_month_end))]
 
 # 날짜별 판매수 합계
-agg_sales = filtered_sales.groupby('날짜')['판매수'].sum()
+agg_filtered_sales = filtered_df_sales_oil_merged.groupby('날짜')['판매수'].sum()
+agg_other_sales = other_df_sales_oil_merged.groupby('날짜')['판매수'].sum()
+
+# 이동평균 계산
+rolling_filtered_sales = agg_filtered_sales.rolling(window=15).mean()
+rolling_other_sales = agg_other_sales.rolling(window=15).mean()  # 15일 이동평균 적용
 
 # 시각화
 plt.rcParams['font.family'] = 'Malgun Gothic'
 plt.figure(figsize=(15, 7))
-agg_sales.plot(kind='line', marker='o')
-plt.title('15일과 말일의 판매수 시계열 데이터')
+
+# 15일과 말일의 이동평균만 그래프에 표시
+rolling_filtered_sales.plot(kind='line', color='blue', linewidth=2, label='15일 & 마지막일 (이동평균 15일)')
+
+# 그 외의 날짜의 이동평균만 그래프에 표시
+rolling_other_sales.plot(kind='line', color='orange', linewidth=2, label='그 외의 날짜 (이동평균 15일)')
+
+plt.title('이동평균 시계열 데이터 비교')
 plt.xlabel('날짜')
 plt.ylabel('판매수')
 plt.xticks(rotation=45)
+plt.legend()
 plt.tight_layout()
 plt.show()
+
+
+# 평균 판매수 차이 계산
+avg_diff_filtered = agg_filtered_sales.mean()
+avg_diff_other = agg_other_sales.mean()
+print(f"15일 & 마지막일 평균 판매수: {avg_diff_filtered:.2f}")
+print(f"그 외의 날짜 평균 판매수: {avg_diff_other:.2f}")
+print(f"평균 판매수 차이: {abs(avg_diff_filtered - avg_diff_other):.2f}")
+
 ```
 OutPut
-https://www.kaggle.com/competitions/store-sales-time-series-forecasting/data
+![image](https://github.com/plintAn/Store_Sales_Forecast/assets/124107186/a95ebfb9-bd5e-4d62-aae4-ef2851dc2888)
 
-조금은 차이가 나는 것을 확인할 수 있는데 이를 수치로 환산하여 비교해보겠습니다.
+
+다음은 박스 플롯 분성 시각화
 
 ```python
-# 15일과 말일, 평일 판매수의 평균을 계산합니다.
-avg_special_days_sales = np.mean(special_days_sales)
-avg_weekday_sales = np.mean(weekday_sales)
+import matplotlib.pyplot as plt
 
-# 두 평균 간의 차이를 퍼센트로 변환합니다.
-percentage_difference = ((avg_special_days_sales - avg_weekday_sales) / avg_weekday_sales) * 100
+# 데이터 준비
+data = [filtered_df_sales_oil_merged['판매수'].values, other_df_sales_oil_merged['판매수'].values]
 
-print(f"15일과 말일의 판매수가 평일 판매수보다 약 {percentage_difference:.2f}% 더 높습니다.")
+# 시각화
+plt.rcParams['font.family'] = 'Malgun Gothic'
+plt.figure(figsize=(10, 6))
+
+# 박스플롯 생성. whis 값을 크게 설정하여 이상치의 범위를 확장하고, boxprops로 박스 색상을 지정.
+bp = plt.boxplot(data, vert=False, patch_artist=True, labels=['15일과 말일', '평일'], whis=[5, 95], boxprops=dict(facecolor="skyblue"))
+
+plt.title('15일과 말일 vs 평일 판매수 분포 비교')
+plt.xlabel('판매수')
+plt.tight_layout()
+plt.show()
+
 ```
-
 OutPut
-```python
-15일과 말일의 판매수가 평일 판매수보다 약 1.41% 더 높습니다.
-```
+![image](https://github.com/plintAn/Store_Sales_Forecast/assets/124107186/33e059b3-f9e2-4c0c-9474-1b7f44653a6b)
+
+
 
 생각보다 큰 차이를 보이진 않은 걸로 나타났습니다.
 

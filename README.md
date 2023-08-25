@@ -607,36 +607,170 @@ OutPut
 
 # 3.데이터 모델링
 
-* LinearRegression은 단일 결정 함수로 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 포착하는 데 한계가 있지만, 이해하기 쉽고 구현하기 쉽다는 장점이 있다.
-* RandomForestRegressor는 여러 개의 결정 트리를 결합하여 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 잘 포착하여 높은 예측 성능을 보인다
-* DecisionTreeRegressor는 단일 결정 트리로 예측을 수행하는 회귀 모델로, 데이터의 복잡한 패턴을 잘 포착할 수 있다.
+## 3.1 ARIMA 모델링
+* ARIMA는 자동회귀통합이동평균 모델로, 시계열 데이터의 트렌드와 계절성을 모델링하려고 합니다.
+* ARIMA 모델은 피처를 요구하지 않기 때문에 '판매수'만 사용하여 모델링 합니다.
 
-
+로드
 ```python
-import pandas as pd
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import cross_val_score
+import numpy as np
 
-# 15일과 말일 변수 제거
-X = df_sales_oil_holidays_scaled[["변경", "유가"]]
-y = df_sales_oil_holidays_scaled["판매수"]
+# 데이터 로드
+# df_sales_oil_holidays_scaled & df_test_sales
 
-# 학습 데이터와 테스트 데이터 분리
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
-
-# 모델링
-models = [LinearRegression(), RandomForestRegressor(), DecisionTreeRegressor()]
-for model in models:
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
-    mse = mean_squared_error(y_test, predictions)
-    print(f"{model.__class__.__name__}: {mse}")
+X = df_sales_oil_holidays_scaled.drop('판매수', axis=1)
+y = df_sales_oil_holidays_scaled['판매수']
 
 
 ```
+## 3.1.1 최적의 파라미터 그리드 서치
+```python
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+
+# 최적의 파라미터를 찾기 위한 그리드 서치
+p_values = range(0, 8)
+d_values = range(0, 3)
+q_values = range(0, 5)
+
+best_rmse = float("inf")
+best_order = None
+
+for p in p_values:
+    for d in d_values:
+        for q in q_values:
+            order = (p,d,q)
+            try:
+                model = ARIMA(train, order=order)
+                model_fit = model.fit()
+                forecast = model_fit.forecast(steps=len(test))
+                rmse = sqrt(mean_squared_error(test, forecast))
+                if rmse < best_rmse:
+                    best_rmse = rmse
+                    best_order = order
+            except:
+                continue
+
+print('Best ARIMA Order:', best_order)
+print('Best RMSE:', best_rmse)
+
+# 최적의 파라미터를 사용하여 다시 학습 및 예측
+model = ARIMA(train, order=best_order)
+model_fit = model.fit()
+forecast = model_fit.forecast(steps=len(test))
+forecast_series = pd.Series(forecast, index=test.index)
+
+```
+실행
+
+결과
+```python
+1178    0.955537
+1179    0.752744
+1180    1.062633
+1181    0.925266
+1182    0.960328
+1183    0.954992
+1184    0.873538
+1185    0.983819
+1186    0.926973
+1187    0.950540
+1188    0.947603
+1189    0.916762
+1190    0.956434
+1191    0.932764
+1192    0.944948
+1193    0.943278
+Name: predicted_mean, dtype: float64
+```
+이를 다시 스케일링을 돌린다.
+
+```python
+forecast_original_scale = scaler_sales.inverse_transform(np.array(forecast).reshape(-1, 1))
+
+# 예측된 넘파이 배열을 다시 df_test_sales 값에 대
+df_test_sales['판매수'] = forecast_original_scale
+
+```
+최종 OutPut
+
+```python
+	날짜	판매수
+0	2017-08-16	761072.557089
+1	2017-08-17	721419.167524
+2	2017-08-18	782013.860175
+3	2017-08-19	755153.655275
+4	2017-08-20	762009.529833
+5	2017-08-21	760966.156758
+6	2017-08-22	745038.916458
+7	2017-08-23	766602.851257
+8	2017-08-24	755487.334311
+9	2017-08-25	760095.607461
+10	2017-08-26	759521.287370
+11	2017-08-27	753490.635172
+12	2017-08-28	761248.132994
+13	2017-08-29	756619.654973
+14	2017-08-30	759002.040122
+15	2017-08-31	758675.508767
+```
+
+
+## 3.2 LSTM 모델
+
+* LSTM은 RNN의 변형으로 시계열 데이터에 잘 작동하는 딥러닝 모델입니다.
+* 데이터를 시퀀스로 변환하여 LSTM에 적용해야 합니다.
+
+## 3.2.1 필요한 라이브러리 임포트
+```python
+import numpy as np
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+```
+## 3.2.2 데이터 준비 및 전처리
+```python
+# 데이터 세트를 학습 및 테스트 데이터로 분할
+train = df_sales_oil_holidays_scaled['판매수'].values
+test = df_test_sales['판매수'].values
+
+# 데이터를 LSTM 입력 형태에 맞게 변형
+def create_dataset(dataset, look_back=1):
+    X, Y = [], []
+    for i in range(len(dataset)-look_back-1):
+        a = dataset[i:(i+look_back)]
+        X.append(a)
+        Y.append(dataset[i + look_back])
+    return np.array(X), np.array(Y)
+
+look_back = 1
+trainX, trainY = create_dataset(train, look_back)
+testX, testY = create_dataset(test, look_back)
+
+# 입력을 [samples, time steps, features]로 재구성
+trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
+testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
+```
+
+## 3.2.3 LSTM 모델을 구축하고 학습을 진행
+
+```python
+model = Sequential()
+model.add(LSTM(50, input_shape=(1, look_back)))
+model.add(Dense(1))
+model.compile(loss='mean_squared_error', optimizer='adam')
+model.fit(trainX, trainY, epochs=100, batch_size=1, verbose=2)
+```
+loading ...
+
+![forcasting](https://github.com/plintAn/Store_Sales_Forecast/assets/124107186/aca1815a-2040-46e5-baed-97dbcba27baa)
+
 
 </div>
 
@@ -644,21 +778,60 @@ for model in models:
 
 # 4.데이터 모델링 평가
 
-OutPut
+4.1 ARIMA 모델 평가
 
 ```python
-LinearRegression: 0.6824518988477972
-RandomForestRegressor: 0.8073812617986736
-DecisionTreeRegressor: 0.991017555995399
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+
+# 1. 데이터 준비
+# df_sales_oil_holidays_scaled에서 '판매수'만 사용
+data = df_sales_oil_holidays_scaled['판매수']
+
+# 학습 및 테스트 데이터 분리 (예시로 마지막 16개를 테스트 데이터로 사용)
+train, test = data[:-16], data[-16:]
+
+# 2. 모델 설정 및 학습
+model = ARIMA(train, order=(5, 2, 3))
+model_fit = model.fit()
+
+# 3. 예측
+forecast = model_fit.forecast(steps=len(test))
+
+# 예측된 결과의 인덱스를 테스트 데이터의 인덱스로 설정
+forecast_series = pd.Series(forecast, index=test.index)
+
+# 4. 평가
+rmse = sqrt(mean_squared_error(test, forecast_series))
+print('Test RMSE:', rmse)
+
 ```
 
-#### 세 가지 모델을 비교하여 가장 효과가 좋은 분석은 랜덤포레스트회귀
+OutPut
+```python
+Test RMSE: 0.4591690951740325
+```
 
-MSE 값이 가장 낮기 떄문이다.
+4.2 ARIMA 모델 평가
 
-랜덤포레스트회귀 모델은 여러 개의 결정 트리를 결합하여 예측을 수행한다. 데이터의 복잡한 패턴을 잘 포착하여 높은 예측 성능을 보인다.또한, 과적합의 위험을 줄이기 위해 앙상블 학습 기법을 사용한다.
+```python
+# 스케일링된 값을 원래의 스케일로 변환
+forecast_original = scaler_sales.inverse_transform(np.array(forecast).reshape(-1, 1))
+test_original = scaler_sales.inverse_transform(test.values.reshape(-1, 1))
 
-따라서, df_sales_oil_holidays_scaled 데이터를 기반으로 날짜별 판매수를 예측하는 데 가장 효과적인 분석은 랜덤포레스트회귀이다.
+# RMSE 계산
+rmse_original_scale = np.sqrt(mean_squared_error(test_original, forecast_original))
+print('Original Scale Test RMSE: %.2f' % (rmse_original_scale))
+
+```
+OutPut
+
+```
+Original Scale Test RMSE: 0.46
+```
+
 
 </div>
 
@@ -666,7 +839,73 @@ MSE 값이 가장 낮기 떄문이다.
 
 # 5.데이터 결과 테스트 및 예측
 
+## 5.1 ARIMA 모델 예측
 
+```python
+forecast_original_scale = scaler_sales.inverse_transform(np.array(forecast).reshape(-1, 1))
+
+# 예측된 넘파이 배열을 다시 df_test_sales 값에 대
+df_test_sales['판매수'] = forecast_original_scale
+
+```
+최종 OutPut
+
+```python
+	날짜	판매수
+0	2017-08-16	761072.557089
+1	2017-08-17	721419.167524
+2	2017-08-18	782013.860175
+3	2017-08-19	755153.655275
+4	2017-08-20	762009.529833
+5	2017-08-21	760966.156758
+6	2017-08-22	745038.916458
+7	2017-08-23	766602.851257
+8	2017-08-24	755487.334311
+9	2017-08-25	760095.607461
+10	2017-08-26	759521.287370
+11	2017-08-27	753490.635172
+12	2017-08-28	761248.132994
+13	2017-08-29	756619.654973
+14	2017-08-30	759002.040122
+15	2017-08-31	758675.508767
+```
+
+
+```python
+trainPredict = model.predict(trainX)
+testPredict = model.predict(testX)
+
+# 스케일링된 값을 원래의 스케일로 변환
+trainPredict_original = scaler_sales.inverse_transform(trainPredict)
+trainY_original = scaler_sales.inverse_transform([trainY])
+testPredict_original = scaler_sales.inverse_transform(testPredict)
+testY_original = scaler_sales.inverse_transform([testY])
+
+# RMSE 계산
+trainScore = np.sqrt(mean_squared_error(trainY_original[0], trainPredict_original[:,0]))
+print('Train RMSE: %.2f' % (trainScore))
+testScore = np.sqrt(mean_squared_error(testY_original[0], testPredict_original[:,0]))
+print('Test RMSE: %.2f' % (testScore))
+```
+
+OutPut
+```python
+37/37 [==============================] - 1s 1ms/step
+1/1 [==============================] - 0s 22ms/step
+Train RMSE: 84771.14
+Test RMSE: 51838.95
+```
+### 평가
+
+* ARIMA 모델을 사용하여 예측한 값들은 2017-08-16부터 2017-08-31까지의 기간 동안의 판매수를 나타낸다.
+* 예측된 판매수 값은 721,419부터 782,014 사이에서 변동
+* ARIMA 모델로 예측한 결과의 RMSE는 스케일링 된 데이터에 대해 약 0.46
+
+* LSTM 모델은 딥 러닝 기반의 시계열 예측 모델로, 장기적인 패턴을 포착에 유리하다.
+* 학습 데이터에 대한 RMSE는 약 84,771.14
+* 테스트 데이터에 대한 RMSE는 약 51,838.95
+
+## 결론: LSTM 모델의 RMSE가 ARIMA 모델보다 낮다면 LSTM이 더 나은 예측 성능을 보여주는 것으로 판단
 
 </div>
 
